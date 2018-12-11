@@ -77,11 +77,12 @@ public class GetterHookHandleHelper {
         return hookClassName;
     }
 
-    public static JCStatement generateHookStatement(String hookClssName, String hookMethod, JavacNode fieldNode) {
+    /**
+     * 生成hook方法
+     */
+    private static JCStatement generateHookStatement(String hookClssName, String hookMethod, JavacNode fieldNode) {
         JavacTreeMaker treeMaker = fieldNode.getTreeMaker();
         JavacNode typeNode = fieldNode.up();
-        //指定类导入指定方法并返回该方法
-
         String proxyHookMethodName = GetterHookProxy.class.getCanonicalName() + "." + hookMethod;
         JCTree.JCExpression proxyHookMethod = JavacHandlerUtil.chainDotsString(typeNode, proxyHookMethodName);
 
