@@ -21,28 +21,10 @@
  */
 package lombok.javac.handlers;
 
-import static lombok.core.handlers.HandlerUtil.*;
-import static lombok.javac.Javac.*;
-import static lombok.javac.JavacTreeMaker.TypeTag.*;
-import static lombok.javac.handlers.JavacHandlerUtil.*;
-
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
-
-import lombok.AccessLevel;
-import lombok.ConfigurationKeys;
-import lombok.experimental.Delegate;
-import lombok.Getter;
-import lombok.core.AST.Kind;
-import lombok.core.AnnotationValues;
-import lombok.javac.JavacAnnotationHandler;
-import lombok.javac.JavacNode;
-import lombok.javac.JavacTreeMaker;
-import lombok.javac.JavacTreeMaker.TypeTag;
-
-import org.mangosdk.spi.ProviderFor;
 
 import com.sun.tools.javac.code.Flags;
 import com.sun.tools.javac.code.Type;
@@ -65,6 +47,53 @@ import com.sun.tools.javac.util.JCDiagnostic.DiagnosticPosition;
 import com.sun.tools.javac.util.List;
 import com.sun.tools.javac.util.ListBuffer;
 import com.sun.tools.javac.util.Name;
+import lombok.AccessLevel;
+import lombok.ConfigurationKeys;
+import lombok.Getter;
+import lombok.core.AST.Kind;
+import lombok.core.AnnotationValues;
+import lombok.experimental.Delegate;
+import lombok.extern.hook.getter.GetterHookHandleHelper;
+import lombok.javac.JavacAnnotationHandler;
+import lombok.javac.JavacNode;
+import lombok.javac.JavacTreeMaker;
+import lombok.javac.JavacTreeMaker.TypeTag;
+import org.mangosdk.spi.ProviderFor;
+
+import static lombok.core.handlers.HandlerUtil.FieldAccess;
+import static lombok.core.handlers.HandlerUtil.handleFlagUsage;
+import static lombok.javac.Javac.CTC_BOOLEAN;
+import static lombok.javac.Javac.CTC_BOT;
+import static lombok.javac.Javac.CTC_BYTE;
+import static lombok.javac.Javac.CTC_CHAR;
+import static lombok.javac.Javac.CTC_DOUBLE;
+import static lombok.javac.Javac.CTC_EQUAL;
+import static lombok.javac.Javac.CTC_FLOAT;
+import static lombok.javac.Javac.CTC_INT;
+import static lombok.javac.Javac.CTC_LONG;
+import static lombok.javac.Javac.CTC_SHORT;
+import static lombok.javac.JavacTreeMaker.TypeTag.typeTag;
+import static lombok.javac.handlers.JavacHandlerUtil.CopyJavadoc;
+import static lombok.javac.handlers.JavacHandlerUtil.chainDotsString;
+import static lombok.javac.handlers.JavacHandlerUtil.copyAnnotations;
+import static lombok.javac.handlers.JavacHandlerUtil.copyJavadoc;
+import static lombok.javac.handlers.JavacHandlerUtil.createFieldAccessor;
+import static lombok.javac.handlers.JavacHandlerUtil.deleteAnnotationIfNeccessary;
+import static lombok.javac.handlers.JavacHandlerUtil.deleteImportFromCompilationUnit;
+import static lombok.javac.handlers.JavacHandlerUtil.findCopyableAnnotations;
+import static lombok.javac.handlers.JavacHandlerUtil.genJavaLangTypeRef;
+import static lombok.javac.handlers.JavacHandlerUtil.getMirrorForFieldType;
+import static lombok.javac.handlers.JavacHandlerUtil.hasAnnotation;
+import static lombok.javac.handlers.JavacHandlerUtil.inNetbeansEditor;
+import static lombok.javac.handlers.JavacHandlerUtil.injectMethod;
+import static lombok.javac.handlers.JavacHandlerUtil.isFieldDeprecated;
+import static lombok.javac.handlers.JavacHandlerUtil.methodExists;
+import static lombok.javac.handlers.JavacHandlerUtil.recursiveSetGeneratedBy;
+import static lombok.javac.handlers.JavacHandlerUtil.toAllGetterNames;
+import static lombok.javac.handlers.JavacHandlerUtil.toGetterName;
+import static lombok.javac.handlers.JavacHandlerUtil.toJavacModifier;
+import static lombok.javac.handlers.JavacHandlerUtil.typeMatches;
+import static lombok.javac.handlers.JavacHandlerUtil.unboxAndRemoveAnnotationParameter;
 
 /**
  * Handles the {@code lombok.Getter} annotation for javac.
@@ -126,8 +155,18 @@ public class HandleGetter extends JavacAnnotationHandler<Getter> {
 		}
 		createGetterForField(level, fieldNode, fieldNode, false, lazy, onMethod);
 	}
-	
-	@Override public void handle(AnnotationValues<Getter> annotation, JCAnnotation ast, JavacNode annotationNode) {
+
+	@Override
+	public void handle(AnnotationValues<Getter> annotation, JCAnnotation ast, JavacNode annotationNode) {
+		GetterHookHandleHelper.THREAD_LOCAL.set(annotation);
+		try {
+			this.handle0(annotation, ast, annotationNode);
+		} finally {
+			GetterHookHandleHelper.THREAD_LOCAL.remove();
+		}
+	}
+
+	public void handle0(AnnotationValues<Getter> annotation, JCAnnotation ast, JavacNode annotationNode) {
 		handleFlagUsage(annotationNode, ConfigurationKeys.GETTER_FLAG_USAGE, "@Getter");
 		
 		Collection<JavacNode> fields = annotationNode.upFromAnnotationToFields();
@@ -215,10 +254,17 @@ public class HandleGetter extends JavacAnnotationHandler<Getter> {
 		}
 		
 		long access = toJavacModifier(level) | (fieldDecl.mods.flags & Flags.STATIC);
-		
-		injectMethod(fieldNode.up(), createGetter(access, fieldNode, fieldNode.getTreeMaker(), source.get(), lazy, onMethod), List.<Type>nil(), getMirrorForFieldType(fieldNode));
+
+		//injectMethod(fieldNode.up(), createGetter(access, fieldNode, fieldNode.getTreeMaker(), source.get(), lazy, onMethod), List.<Type>nil(), getMirrorForFieldType(fieldNode));
+
+		JCMethodDecl getterMethodDecl = createGetter(access, fieldNode, fieldNode.getTreeMaker(), source.get(), lazy, onMethod);
+		if (GetterHookHandleHelper.needInjectHook()) {
+			GetterHookHandleHelper.injectHook(getterMethodDecl, fieldNode);
+		}
+
+		injectMethod(fieldNode.up(), getterMethodDecl, List.<Type>nil(), getMirrorForFieldType(fieldNode));
 	}
-	
+
 	public JCMethodDecl createGetter(long access, JavacNode field, JavacTreeMaker treeMaker, JCTree source, boolean lazy, List<JCAnnotation> onMethod) {
 		JCVariableDecl fieldNode = (JCVariableDecl) field.get();
 		
