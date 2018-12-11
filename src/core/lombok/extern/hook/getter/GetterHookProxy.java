@@ -11,7 +11,7 @@ import java.util.Map;
  */
 public class GetterHookProxy {
 
-    private volatile static Map<String, GetterHook> getterHookMap = new HashMap<String, GetterHook>();
+    private static final Map<String, GetterHook> getterHookMap = new HashMap<String, GetterHook>();
 
     public static <T> T hook(String getterHookClassName, String className, String fieldName, Object classInstance, T fieldValue) {
         GetterHook getterHook = getGetterHook(getterHookClassName);
